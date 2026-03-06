@@ -801,7 +801,7 @@ xlog_wait_on_iclog(
 int
 xlog_write_one_vec(
 	struct xlog		*log,
-	struct xfs_cil_ctx	*ctx,
+	struct xlog_chkpt	*ctx,
 	struct xfs_log_iovec	*reg,
 	struct xlog_ticket	*ticket)
 {
@@ -2127,7 +2127,7 @@ xlog_write_partial(
 int
 xlog_write(
 	struct xlog		*log,
-	struct xfs_cil_ctx	*ctx,
+	struct xlog_chkpt	*ctx,
 	struct list_head	*lv_chain,
 	struct xlog_ticket	*ticket,
 	uint32_t		len)

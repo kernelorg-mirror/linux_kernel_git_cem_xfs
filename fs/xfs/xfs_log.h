@@ -7,7 +7,7 @@
 #define __XFS_LOG_H__
 
 struct xlog_format_buf;
-struct xfs_cil_ctx;
+struct xlog_chkpt;
 
 /* Region types for iovec's i_type */
 #define XLOG_REG_TYPE_BFORMAT		1
