@@ -267,54 +267,6 @@ xfs_trans_ail_cursor_last(
 }
 
 /*
- * Splice the log item list into the AIL at the given LSN. We splice to the
- * tail of the given LSN to maintain insert order for push traversals. The
- * cursor is optional, allowing repeated updates to the same LSN to avoid
- * repeated traversals.  This should not be called with an empty list.
- */
-static void
-xfs_ail_splice(
-	struct xfs_ail		*ailp,
-	struct xfs_ail_cursor	*cur,
-	struct list_head	*list,
-	xfs_lsn_t		lsn)
-{
-	struct xfs_log_item	*lip;
-
-	ASSERT(!list_empty(list));
-
-	/*
-	 * Use the cursor to determine the insertion point if one is
-	 * provided.  If not, or if the one we got is not valid,
-	 * find the place in the AIL where the items belong.
-	 */
-	lip = cur ? cur->item : NULL;
-	if (!lip || (uintptr_t)lip & 1)
-		lip = __xfs_trans_ail_cursor_last(ailp, lsn);
-
-	/*
-	 * If a cursor is provided, we know we're processing the AIL
-	 * in lsn order, and future items to be spliced in will
-	 * follow the last one being inserted now.  Update the
-	 * cursor to point to that last item, now while we have a
-	 * reliable pointer to it.
-	 */
-	if (cur)
-		cur->item = list_entry(list->prev, struct xfs_log_item, li_ail);
-
-	/*
-	 * Finally perform the splice.  Unless the AIL was empty,
-	 * lip points to the item in the AIL _after_ which the new
-	 * items should go.  If lip is null the AIL was empty, so
-	 * the new items go at the head of the AIL.
-	 */
-	if (lip)
-		list_splice(list, &lip->li_ail);
-	else
-		list_splice(list, &ailp->ail_head);
-}
-
-/*
  * Delete the given item from the AIL.
  */
 static void
@@ -824,43 +776,47 @@ xfs_ail_update_finish(
  * the caller.
  */
 void
-xfs_trans_ail_update_bulk(
+xfs_trans_ail_insert(
 	struct xfs_ail		*ailp,
 	struct xfs_ail_cursor	*cur,
-	struct xfs_log_item	**log_items,
-	int			nr_items,
+	struct xfs_log_item	*lip,
 	xfs_lsn_t		lsn) __releases(ailp->ail_lock)
 {
 	struct xfs_log_item	*mlip;
+	struct xfs_log_item	*last = NULL;
 	xfs_lsn_t		tail_lsn = 0;
-	int			i;
-	LIST_HEAD(tmp);
 
-	ASSERT(nr_items > 0);		/* Not required, but true. */
 	mlip = xfs_ail_min(ailp);
 
-	for (i = 0; i < nr_items; i++) {
-		struct xfs_log_item *lip = log_items[i];
-		if (test_and_set_bit(XFS_LI_IN_AIL, &lip->li_flags)) {
-			/* check if we really need to move the item */
-			if (XFS_LSN_CMP(lsn, lip->li_lsn) <= 0)
-				continue;
+	if (test_and_set_bit(XFS_LI_IN_AIL, &lip->li_flags)) {
+		/* check if we really need to move the item */
+		if (XFS_LSN_CMP(lsn, lip->li_lsn) <= 0)
+			goto skip;
 
-			trace_xfs_ail_move(lip, lip->li_lsn, lsn);
-			if (mlip == lip && !tail_lsn)
-				tail_lsn = lip->li_lsn;
+		trace_xfs_ail_move(lip, lip->li_lsn, lsn);
+		if (mlip == lip && !tail_lsn)
+			tail_lsn = lip->li_lsn;
 
-			xfs_ail_delete(ailp, lip);
-		} else {
-			trace_xfs_ail_insert(lip, 0, lsn);
-		}
-		lip->li_lsn = lsn;
-		list_add_tail(&lip->li_ail, &tmp);
+		xfs_ail_delete(ailp, lip);
+	} else {
+		trace_xfs_ail_insert(lip, 0, lsn);
 	}
+	lip->li_lsn = lsn;
 
-	if (!list_empty(&tmp))
-		xfs_ail_splice(ailp, cur, &tmp, lsn);
 
+	last = cur ? cur->item : NULL;
+	if (!last || (uintptr_t)last & 1)
+		last = __xfs_trans_ail_cursor_last(ailp, lsn);
+
+	if (cur)
+		cur->item = lip;
+
+	if (last)
+		list_add(&lip->li_ail, &last->li_ail);
+	else
+		list_add(&lip->li_ail, &ailp->ail_head);
+
+skip:
 	/*
 	 * If this is the first insert, wake up the push daemon so it can
 	 * actively scan for items to push. We also need to do a log tail
@@ -875,17 +831,6 @@ xfs_trans_ail_update_bulk(
 	}
 
 	xfs_ail_update_finish(ailp, tail_lsn);
-}
-
-/* Insert a log item into the AIL. */
-void
-xfs_trans_ail_insert(
-	struct xfs_ail		*ailp,
-	struct xfs_log_item	*lip,
-	xfs_lsn_t		lsn)
-{
-	spin_lock(&ailp->ail_lock);
-	xfs_trans_ail_update_bulk(ailp, NULL, &lip, 1, lsn);
 }
 
 /*

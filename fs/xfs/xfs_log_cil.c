@@ -777,28 +777,6 @@ xlog_cil_insert_items(
 	}
 }
 
-static inline void
-xlog_cil_ail_insert_batch(
-	struct xfs_ail		*ailp,
-	struct xfs_ail_cursor	*cur,
-	struct xfs_log_item	**log_items,
-	int			nr_items,
-	xfs_lsn_t		commit_lsn)
-{
-	int	i;
-
-	spin_lock(&ailp->ail_lock);
-	/* xfs_trans_ail_update_bulk drops ailp->ail_lock */
-	xfs_trans_ail_update_bulk(ailp, cur, log_items, nr_items, commit_lsn);
-
-	for (i = 0; i < nr_items; i++) {
-		struct xfs_log_item *lip = log_items[i];
-
-		if (lip->li_ops->iop_unpin)
-			lip->li_ops->iop_unpin(lip, 0);
-	}
-}
-
 /*
  * Take the checkpoint's log vector chain of items and insert the attached log
  * items into the AIL. This uses bulk insertion techniques to minimise AIL lock
@@ -842,13 +820,10 @@ xlog_cil_ail_insert(
 	struct xlog_chkpt	*ctx,
 	bool			aborted)
 {
-#define LOG_ITEM_BATCH_SIZE	32
 	struct xfs_ail		*ailp = ctx->cil->xc_log->l_ailp;
-	struct xfs_log_item	*log_items[LOG_ITEM_BATCH_SIZE];
 	struct xfs_log_vec	*lv;
 	struct xfs_ail_cursor	cur;
 	xfs_lsn_t		old_head;
-	int			i = 0;
 
 	/*
 	 * Update the AIL head LSN with the commit record LSN of this
@@ -926,7 +901,7 @@ xlog_cil_ail_insert(
 			 */
 			spin_lock(&ailp->ail_lock);
 			if (XFS_LSN_CMP(item_lsn, lip->li_lsn) > 0)
-				xfs_trans_ail_update(ailp, lip, item_lsn);
+				xfs_trans_ail_insert(ailp, NULL, lip, item_lsn);
 			else
 				spin_unlock(&ailp->ail_lock);
 			if (lip->li_ops->iop_unpin)
@@ -934,19 +909,14 @@ xlog_cil_ail_insert(
 			continue;
 		}
 
-		/* Item is a candidate for bulk AIL insert.  */
-		log_items[i++] = lv->lv_item;
-		if (i >= LOG_ITEM_BATCH_SIZE) {
-			xlog_cil_ail_insert_batch(ailp, &cur, log_items,
-					LOG_ITEM_BATCH_SIZE, ctx->start_lsn);
-			i = 0;
-		}
-	}
+		spin_lock(&ailp->ail_lock);
 
-	/* make sure we insert the remainder! */
-	if (i)
-		xlog_cil_ail_insert_batch(ailp, &cur, log_items, i,
-				ctx->start_lsn);
+		/* xfs_trans_ail_insert() drops ailp->ail_lock */
+		xfs_trans_ail_insert(ailp, &cur, lip, ctx->start_lsn);
+
+		if (lip->li_ops->iop_unpin)
+			lip->li_ops->iop_unpin(lip, 0);
+	}
 
 	spin_lock(&ailp->ail_lock);
 	xfs_trans_ail_cursor_done(&cur);
