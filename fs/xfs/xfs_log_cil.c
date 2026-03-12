@@ -105,6 +105,10 @@ xlog_cil_ctx_alloc(void)
 	INIT_LIST_HEAD(&ctx->committing);
 	INIT_LIST_HEAD(&ctx->log_items);
 	INIT_LIST_HEAD(&ctx->lv_chain);
+	INIT_LIST_HEAD(&ctx->ail_items);
+	INIT_LIST_HEAD(&ctx->ail_link);
+	spin_lock_init(&ctx->items_lock);
+	atomic_set(&ctx->hold, 0);
 	INIT_WORK(&ctx->push_work, xlog_cil_push_work);
 	return ctx;
 }

@@ -243,6 +243,12 @@ struct xlog_chkpt {
 	struct xfs_busy_extents	*busy_extents;
 	struct list_head	log_items;	/* log items in chkpt */
 	struct list_head	lv_chain;	/* logvecs being pushed */
+
+	spinlock_t		items_lock;	/* grab to add/remove ail_items */
+	struct list_head	ail_items;	/* ctx items in AIL */
+	struct list_head	ail_link;	/* Link context to ail */
+	atomic_t		hold;		/* refcount for the checkpoint */
+	unsigned int		i_count;	/* debug: track # items added */
 	struct list_head	iclog_entry;
 	struct list_head	committing;	/* ctx committing list */
 	struct work_struct	push_work;
