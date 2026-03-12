@@ -109,6 +109,9 @@ xlog_cil_ctx_alloc(void)
 	INIT_LIST_HEAD(&ctx->ail_link);
 	spin_lock_init(&ctx->items_lock);
 	atomic_set(&ctx->hold, 0);
+
+	/* XXX: DEBUG counter */
+	ctx->i_count = 0;
 	INIT_WORK(&ctx->push_work, xlog_cil_push_work);
 	return ctx;
 }
@@ -841,7 +844,9 @@ xlog_cil_ail_insert(
 	 */
 	ASSERT(XFS_LSN_CMP(ctx->commit_lsn, ailp->ail_head_lsn) >= 0 ||
 			aborted);
+
 	spin_lock(&ailp->ail_lock);
+	atomic_inc(&ctx->hold);
 	xfs_trans_ail_cursor_last(ailp, &cur, ctx->start_lsn);
 	old_head = ailp->ail_head_lsn;
 	ailp->ail_head_lsn = ctx->commit_lsn;
@@ -904,14 +909,14 @@ xlog_cil_ail_insert(
 			 * using.
 			 */
 			if (XFS_LSN_CMP(item_lsn, lip->li_lsn) > 0)
-				xfs_trans_ail_insert(ailp, NULL, lip, item_lsn);
+				xfs_trans_ail_insert(ailp, ctx, NULL, lip, item_lsn);
 
 			if (lip->li_ops->iop_unpin)
 				lip->li_ops->iop_unpin(lip, 0);
 			continue;
 		}
 
-		xfs_trans_ail_insert(ailp, &cur, lip, ctx->start_lsn);
+		xfs_trans_ail_insert(ailp, ctx, &cur, lip, ctx->start_lsn);
 
 		if (lip->li_ops->iop_unpin)
 			lip->li_ops->iop_unpin(lip, 0);
@@ -919,6 +924,11 @@ xlog_cil_ail_insert(
 
 	spin_lock(&ailp->ail_lock);
 	xfs_trans_ail_cursor_done(&cur);
+
+	if (!list_empty(&ctx->ail_items))
+		list_add_tail(&ctx->ail_link, &ailp->ail_head);
+
+	atomic_dec(&ctx->hold);
 	spin_unlock(&ailp->ail_lock);
 }
 
@@ -975,7 +985,12 @@ xlog_cil_committed(
 	xlog_cil_free_logvec(&ctx->lv_chain);
 
 	xfs_discard_extents(mp, busy_extents);
-	kfree(ctx);
+
+	/*
+	 * This leaks memory by now, contexts are not freed
+	 */
+	if (!ctx->i_count)
+		kfree(ctx);
 }
 
 void
