@@ -19,7 +19,60 @@
 #include "xfs_log.h"
 #include "xfs_log_priv.h"
 
+/*
+ * Return a pointer to the item which follows the given item in the AIL.  If
+ * the given item is the last item in the list, then return NULL.
+ */
+static struct xfs_log_item *
+xfs_ail_next(
+	struct xfs_ail		*ailp,
+	struct xfs_log_item	*lip)
+{
+	struct xlog_chkpt	*ctx = lip->li_ctx;
+
+	if (list_is_last(&lip->li_ail, &ctx->ail_items)) {
+		list_for_each_entry_continue(ctx, &ailp->ail_head, ail_link) {
+			if (list_empty(&ctx->ail_items))
+				continue;
+
+			return list_first_entry(&ctx->ail_items,
+						struct xfs_log_item,
+						li_ail);
+		}
+	} else {
+		return list_next_entry(lip, li_ail);
+	}
+	return NULL;
+}
+
 #ifdef DEBUG
+
+static inline struct xfs_log_item *
+xfs_ail_prev_item(
+	struct xfs_ail		*ailp,
+	struct xfs_log_item	*lip)
+{
+	struct xlog_chkpt	*ctx = lip->li_ctx;
+	struct xfs_log_item	*item = NULL;
+
+
+	item = list_prev_entry(lip, li_ail);
+
+	if (&item->li_ail != &ctx->ail_items)
+		return item;
+
+	list_for_each_entry_continue_reverse(ctx, &ailp->ail_head, ail_link) {
+		if (list_empty(&ctx->ail_items))
+			continue;
+
+		item = list_last_entry_or_null(&ctx->ail_items, struct xfs_log_item,
+				       li_ail);
+		return item;
+	}
+
+	return NULL;
+}
+
 /*
  * Check that the list is sorted as it should be.
  *
@@ -50,11 +103,12 @@ xfs_ail_check(
 	 * Sample then check the next and previous entries are valid.
 	 */
 	in_ail = test_bit(XFS_LI_IN_AIL, &lip->li_flags);
-	prev_lip = list_entry(lip->li_ail.prev, struct xfs_log_item, li_ail);
-	if (&prev_lip->li_ail != &ailp->ail_head)
+	prev_lip = xfs_ail_prev_item(ailp, lip);
+	if (prev_lip)
 		prev_lsn = prev_lip->li_lsn;
-	next_lip = list_entry(lip->li_ail.next, struct xfs_log_item, li_ail);
-	if (&next_lip->li_ail != &ailp->ail_head)
+
+	next_lip = xfs_ail_next(ailp, lip);
+	if (next_lip)
 		next_lsn = next_lip->li_lsn;
 	lsn = lip->li_lsn;
 
@@ -64,6 +118,7 @@ xfs_ail_check(
 		return;
 
 	spin_unlock(&ailp->ail_lock);
+
 	ASSERT(in_ail);
 	ASSERT(prev_lsn == NULLCOMMITLSN || XFS_LSN_CMP(prev_lsn, lsn) <= 0);
 	ASSERT(next_lsn == NULLCOMMITLSN || XFS_LSN_CMP(next_lsn, lsn) >= 0);
@@ -74,32 +129,86 @@ xfs_ail_check(
 #endif /* DEBUG */
 
 /*
+ * Return a pointer to the first context in the
+ * AIL with items into it or NULL if there are no
+ * items in any context.
+ */
+static inline struct xlog_chkpt *
+__xfs_ail_ctx_min(
+	struct xfs_ail		*ailp)
+{
+	struct xlog_chkpt	*ctx;
+
+	if (list_empty(&ailp->ail_head))
+		return NULL;
+
+	list_for_each_entry(ctx, &ailp->ail_head, ail_link) {
+		if (list_empty(&ctx->ail_items))
+			continue;
+
+		return ctx;
+	}
+	return NULL;
+}
+
+/*
+ * Return a pointer to the first item in the AIL.  If the AIL is empty, then
+ * return NULL.
+ */
+static inline struct xfs_log_item *
+xfs_ail_min(
+	struct xfs_ail  *ailp)
+{
+	struct xlog_chkpt	*ctx = NULL;
+
+	ctx = __xfs_ail_ctx_min(ailp);
+
+	if (!ctx)
+		return NULL;
+
+	return list_first_entry_or_null(&ctx->ail_items, struct xfs_log_item,
+					li_ail);
+}
+
+/*
+ * Return a pointer to the last checkpoint context in the
+ * AIL, with items.
+ * Return NULL if the AIL is empty or there are no items in a context.
+ */
+static inline struct xlog_chkpt *
+__xfs_ail_ctx_max(
+	struct xfs_ail		*ailp)
+{
+	struct xlog_chkpt	*ctx;
+
+	if (list_empty(&ailp->ail_head))
+		return NULL;
+
+	list_for_each_entry_reverse(ctx, &ailp->ail_head, ail_link) {
+		if (list_empty(&ctx->ail_items))
+			continue;
+
+		return ctx;
+	}
+	return NULL;
+}
+
+/*
  * Return a pointer to the last item in the AIL.  If the AIL is empty, then
  * return NULL.
  */
 static struct xfs_log_item *
 xfs_ail_max(
-	struct xfs_ail  *ailp)
+	struct xfs_ail		*ailp)
 {
-	if (list_empty(&ailp->ail_head))
+	struct xlog_chkpt	*ctx;
+
+	ctx = __xfs_ail_ctx_max(ailp);
+
+	if (!ctx)
 		return NULL;
 
-	return list_entry(ailp->ail_head.prev, struct xfs_log_item, li_ail);
-}
-
-/*
- * Return a pointer to the item which follows the given item in the AIL.  If
- * the given item is the last item in the list, then return NULL.
- */
-static struct xfs_log_item *
-xfs_ail_next(
-	struct xfs_ail		*ailp,
-	struct xfs_log_item	*lip)
-{
-	if (lip->li_ail.next == &ailp->ail_head)
-		return NULL;
-
-	return list_first_entry(&lip->li_ail, struct xfs_log_item, li_ail);
+	return list_last_entry(&ctx->ail_items, struct xfs_log_item, li_ail);
 }
 
 /*
@@ -215,6 +324,7 @@ xfs_trans_ail_cursor_first(
 	xfs_lsn_t		lsn)
 {
 	struct xfs_log_item	*lip;
+	struct xlog_chkpt	*ctx;
 
 	xfs_trans_ail_cursor_init(ailp, cur);
 
@@ -223,9 +333,14 @@ xfs_trans_ail_cursor_first(
 		goto out;
 	}
 
-	list_for_each_entry(lip, &ailp->ail_head, li_ail) {
-		if (XFS_LSN_CMP(lip->li_lsn, lsn) >= 0)
-			goto out;
+	list_for_each_entry(ctx, &ailp->ail_head, ail_link) {
+		if (list_empty(&ctx->ail_items))
+			continue;
+
+		list_for_each_entry(lip, &ctx->ail_items, li_ail) {
+			if (XFS_LSN_CMP(lip->li_lsn, lsn) >= 0)
+				goto out;
+		}
 	}
 	return NULL;
 
@@ -240,11 +355,14 @@ __xfs_trans_ail_cursor_last(
 	struct xfs_ail		*ailp,
 	xfs_lsn_t		lsn)
 {
+	struct xlog_chkpt	*ctx;
 	struct xfs_log_item	*lip;
 
-	list_for_each_entry_reverse(lip, &ailp->ail_head, li_ail) {
-		if (XFS_LSN_CMP(lip->li_lsn, lsn) <= 0)
-			return lip;
+	list_for_each_entry_reverse(ctx, &ailp->ail_head, ail_link) {
+		list_for_each_entry_reverse(lip, &ctx->ail_items, li_ail) {
+			if (XFS_LSN_CMP(lip->li_lsn, lsn) <= 0)
+				return lip;
+		}
 	}
 	return NULL;
 }
@@ -274,8 +392,15 @@ xfs_ail_delete(
 	struct xfs_ail		*ailp,
 	struct xfs_log_item	*lip)
 {
+	struct xlog_chkpt	*ctx = lip->li_ctx;
+
 	xfs_ail_check(ailp, lip);
 	list_del(&lip->li_ail);
+
+	if (list_empty(&ctx->ail_items) && !atomic_read(&ctx->hold)) {
+		list_del(&ctx->ail_link);
+		kfree(ctx);
+	}
 	xfs_trans_ail_cursor_clear(ailp, lip);
 }
 
@@ -778,6 +903,7 @@ xfs_ail_update_finish(
 void
 xfs_trans_ail_insert(
 	struct xfs_ail		*ailp,
+	struct xlog_chkpt	*ctx,
 	struct xfs_ail_cursor	*cur,
 	struct xfs_log_item	*lip,
 	xfs_lsn_t		lsn) __releases(ailp->ail_lock)
@@ -803,6 +929,7 @@ xfs_trans_ail_insert(
 		trace_xfs_ail_insert(lip, 0, lsn);
 	}
 	lip->li_lsn = lsn;
+	lip->li_ctx = ctx;
 
 
 	last = cur ? cur->item : NULL;
@@ -812,10 +939,9 @@ xfs_trans_ail_insert(
 	if (cur)
 		cur->item = lip;
 
-	if (last)
-		list_add(&lip->li_ail, &last->li_ail);
-	else
-		list_add(&lip->li_ail, &ailp->ail_head);
+	list_add_tail(&lip->li_ail, &ctx->ail_items);
+	ctx->i_count++;
+
 
 skip:
 	/*

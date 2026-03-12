@@ -1979,6 +1979,13 @@ xlog_recover_intent_item(
 	xfs_lsn_t			lsn,
 	const struct xfs_defer_op_type	*ops)
 {
+	/*
+	 * Recover does not have its own checkpoint context,
+	 * so grab the current active context to add the recovery
+	 * items into.
+	 */
+	struct xlog_chkpt		*ctx = log->l_cilp->xc_ctx;
+
 	ASSERT(xlog_item_is_intent(lip));
 
 	xfs_defer_start_recovery(lip, &log->r_dfops, ops);
@@ -1987,7 +1994,7 @@ xlog_recover_intent_item(
 	 * Insert the intent into the AIL directly and drop one reference so
 	 * that finishing or canceling the work will drop the other.
 	 */
-	xfs_trans_ail_insert(log->l_ailp, NULL, lip, lsn);
+	xfs_trans_ail_insert(log->l_ailp, ctx, NULL, lip, lsn);
 	lip->li_ops->iop_unpin(lip, 0);
 }
 
@@ -1999,8 +2006,10 @@ xlog_recover_items_pass2(
 	struct list_head                *item_list)
 {
 	struct xlog_recover_item	*item;
+	struct xlog_chkpt		*ctx = log->l_cilp->xc_ctx;
 	int				error = 0;
 
+	atomic_inc(&ctx->hold);
 	list_for_each_entry(item, item_list, ri_list) {
 		trace_xfs_log_recover_item_recover(log, trans, item,
 				XLOG_RECOVER_PASS2);
@@ -2008,10 +2017,13 @@ xlog_recover_items_pass2(
 		if (item->ri_ops->commit_pass2)
 			error = item->ri_ops->commit_pass2(log, buffer_list,
 					item, trans->r_lsn);
-		if (error)
+		if (error) {
+			atomic_dec(&ctx->hold);
 			return error;
+		}
 	}
 
+	atomic_dec(&ctx->hold);
 	return error;
 }
 
