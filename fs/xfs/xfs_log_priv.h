@@ -248,6 +248,7 @@ struct xlog_chkpt {
 	struct list_head	ail_items;	/* ctx items in AIL */
 	struct list_head	ail_link;	/* Link context to ail */
 	atomic_t		hold;		/* refcount for the checkpoint */
+	unsigned int		i_count;	/* count added items to ctx */
 	struct list_head	iclog_entry;
 	struct list_head	committing;	/* ctx committing list */
 	struct work_struct	push_work;
