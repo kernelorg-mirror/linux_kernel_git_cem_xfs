@@ -899,19 +899,14 @@ xlog_cil_ail_insert(
 			 * not affect the AIL cursor the bulk insert path is
 			 * using.
 			 */
-			spin_lock(&ailp->ail_lock);
 			if (XFS_LSN_CMP(item_lsn, lip->li_lsn) > 0)
 				xfs_trans_ail_insert(ailp, NULL, lip, item_lsn);
-			else
-				spin_unlock(&ailp->ail_lock);
+
 			if (lip->li_ops->iop_unpin)
 				lip->li_ops->iop_unpin(lip, 0);
 			continue;
 		}
 
-		spin_lock(&ailp->ail_lock);
-
-		/* xfs_trans_ail_insert() drops ailp->ail_lock */
 		xfs_trans_ail_insert(ailp, &cur, lip, ctx->start_lsn);
 
 		if (lip->li_ops->iop_unpin)

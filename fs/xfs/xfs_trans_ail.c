@@ -786,6 +786,7 @@ xfs_trans_ail_insert(
 	struct xfs_log_item	*last = NULL;
 	xfs_lsn_t		tail_lsn = 0;
 
+	spin_lock(&ailp->ail_lock);
 	mlip = xfs_ail_min(ailp);
 
 	if (test_and_set_bit(XFS_LI_IN_AIL, &lip->li_flags)) {
