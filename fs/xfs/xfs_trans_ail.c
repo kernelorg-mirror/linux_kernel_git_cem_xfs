@@ -19,7 +19,60 @@
 #include "xfs_log.h"
 #include "xfs_log_priv.h"
 
+/*
+ * Return a pointer to the item which follows the given item in the AIL.  If
+ * the given item is the last item in the list, then return NULL.
+ */
+static struct xfs_log_item *
+xfs_ail_next(
+	struct xfs_ail		*ailp,
+	struct xfs_log_item	*lip)
+{
+	struct xlog_chkpt	*ctx = lip->li_ctx;
+
+	if (list_is_last(&lip->li_ail, &ctx->ail_items)) {
+		list_for_each_entry_continue(ctx, &ailp->ail_head, ail_link) {
+			if (list_empty(&ctx->ail_items))
+				continue;
+
+			return list_first_entry(&ctx->ail_items,
+						struct xfs_log_item,
+						li_ail);
+		}
+	} else {
+		return list_next_entry(lip, li_ail);
+	}
+	return NULL;
+}
+
 #ifdef DEBUG
+
+static inline struct xfs_log_item *
+xfs_ail_prev_item(
+	struct xfs_ail		*ailp,
+	struct xfs_log_item	*lip)
+{
+	struct xlog_chkpt	*ctx = lip->li_ctx;
+	struct xfs_log_item	*item = NULL;
+
+
+	item = list_prev_entry(lip, li_ail);
+
+	if (&item->li_ail != &ctx->ail_items)
+		return item;
+
+	list_for_each_entry_continue_reverse(ctx, &ailp->ail_head, ail_link) {
+		if (list_empty(&ctx->ail_items))
+			continue;
+
+		item = list_last_entry_or_null(&ctx->ail_items, struct xfs_log_item,
+				       li_ail);
+		return item;
+	}
+
+	return NULL;
+}
+
 /*
  * Check that the list is sorted as it should be.
  *
@@ -50,11 +103,12 @@ xfs_ail_check(
 	 * Sample then check the next and previous entries are valid.
 	 */
 	in_ail = test_bit(XFS_LI_IN_AIL, &lip->li_flags);
-	prev_lip = list_entry(lip->li_ail.prev, struct xfs_log_item, li_ail);
-	if (&prev_lip->li_ail != &ailp->ail_head)
+	prev_lip = xfs_ail_prev_item(ailp, lip);
+	if (prev_lip)
 		prev_lsn = prev_lip->li_lsn;
-	next_lip = list_entry(lip->li_ail.next, struct xfs_log_item, li_ail);
-	if (&next_lip->li_ail != &ailp->ail_head)
+
+	next_lip = xfs_ail_next(ailp, lip);
+	if (next_lip)
 		next_lsn = next_lip->li_lsn;
 	lsn = lip->li_lsn;
 
@@ -64,6 +118,7 @@ xfs_ail_check(
 		return;
 
 	spin_unlock(&ailp->ail_lock);
+
 	ASSERT(in_ail);
 	ASSERT(prev_lsn == NULLCOMMITLSN || XFS_LSN_CMP(prev_lsn, lsn) <= 0);
 	ASSERT(next_lsn == NULLCOMMITLSN || XFS_LSN_CMP(next_lsn, lsn) >= 0);
@@ -154,30 +209,6 @@ xfs_ail_max(
 		return NULL;
 
 	return list_last_entry(&ctx->ail_items, struct xfs_log_item, li_ail);
-}
-
-/*
- * Return a pointer to the item which follows the given item in the AIL.  If
- * the given item is the last item in the list, then return NULL.
- */
-static struct xfs_log_item *
-xfs_ail_next(
-	struct xfs_ail		*ailp,
-	struct xfs_log_item	*lip)
-{
-	struct xlog_chkpt	*ctx = lip->li_ctx;
-
-	if (list_is_last(&lip->li_ail, &ctx->ail_items)) {
-		list_for_each_entry_continue(ctx, &ailp->ail_head, ail_link) {
-			if (list_empty(&ctx->ail_items))
-				continue;
-
-			return list_first_entry(&ctx->ail_items,
-						struct xfs_log_item,
-						li_ail);
-		}
-	}
-	return NULL;
 }
 
 /*
