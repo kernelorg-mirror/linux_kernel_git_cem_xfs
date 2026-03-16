@@ -925,6 +925,8 @@ xlog_cil_ail_insert(
 	spin_lock(&ailp->ail_lock);
 	xfs_trans_ail_cursor_done(&cur);
 
+	printk("Inserted items: CTX: %p Seq: %lld Items: %u\n",
+	       ctx, ctx->sequence, ctx->i_count);
 	if (!list_empty(&ctx->ail_items))
 		list_add_tail(&ctx->ail_link, &ailp->ail_head);
 
@@ -987,10 +989,20 @@ xlog_cil_committed(
 	xfs_discard_extents(mp, busy_extents);
 
 	/*
-	 * This leaks memory by now, contexts are not freed
+	 * This races with IO completion. IO completion may
+	 * delete items and free the context, and we explode
+	 * here trying to dereference the context.
+	 *
+	 * Disable it by now to see if we actually need it.
 	 */
-	if (!ctx->i_count)
+#if 0
+	if (list_empty(&ctx->ail_items) && list_empty(&ctx->ail_link)) {
+		printk("Freeing empty CTX: %p - SEQ: %lld\n",
+		       ctx, ctx->sequence);
 		kfree(ctx);
+	}
+#endif
+
 }
 
 void
