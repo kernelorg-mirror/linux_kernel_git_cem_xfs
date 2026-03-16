@@ -119,6 +119,9 @@ xfs_ail_check(
 
 	spin_unlock(&ailp->ail_lock);
 
+	printk("prev_lsn(ctx): 0x%llx(%p) next_lsn(ctx): 0x%llx(%p) cur_lsn(ctx): 0x%llx(%p)\n",
+	       prev_lsn, prev_lip->li_ctx, next_lsn, next_lip->li_ctx, lsn,
+	       lip->li_ctx);
 	ASSERT(in_ail);
 	ASSERT(prev_lsn == NULLCOMMITLSN || XFS_LSN_CMP(prev_lsn, lsn) <= 0);
 	ASSERT(next_lsn == NULLCOMMITLSN || XFS_LSN_CMP(next_lsn, lsn) >= 0);
@@ -398,6 +401,7 @@ xfs_ail_delete(
 	list_del(&lip->li_ail);
 
 	if (list_empty(&ctx->ail_items) && !atomic_read(&ctx->hold)) {
+		printk("Freeing CTX: %p SEQ: %lld\n", ctx, ctx->sequence);
 		list_del(&ctx->ail_link);
 		kfree(ctx);
 	}
@@ -910,7 +914,6 @@ xfs_trans_ail_insert(
 {
 	struct xfs_log_item	*mlip;
 	struct xfs_log_item	*last = NULL;
-	struct xlog_chkpt	*first_ctx;
 	xfs_lsn_t		tail_lsn = 0;
 
 	if (!ctx) {
@@ -945,26 +948,8 @@ xfs_trans_ail_insert(
 	if (cur)
 		cur->item = lip;
 
-	if (!last) {
-		first_ctx = list_first_entry_or_null(&ailp->ail_head,
-						     struct xlog_chkpt,
-						     ail_link);
-
-		if (first_ctx) {
-			printk("KABOOM HERE #1?\n");
-			list_add(&lip->li_ail, &first_ctx->ail_items);
-			first_ctx->i_count++;
-		} else {
-			/* No context in AIL, add to the current */
-			printk("KABOOM HERE #2?\n");
-			list_add(&lip->li_ail, &ctx->ail_items);
-			ctx->i_count++;
-		}
-	} else{
-		printk("KABOOM HERE #3?\n");
-		list_add(&lip->li_ail, &last->li_ail);
-		last->li_ctx->i_count++;
-	}
+	list_add_tail(&lip->li_ail, &ctx->ail_items);
+	ctx->i_count++;
 
 
 skip:
