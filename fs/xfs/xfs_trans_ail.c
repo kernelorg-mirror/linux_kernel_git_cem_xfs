@@ -916,11 +916,6 @@ xfs_trans_ail_insert(
 	struct xfs_log_item	*last = NULL;
 	xfs_lsn_t		tail_lsn = 0;
 
-	if (!ctx) {
-		printk("Calling with NULL ctx\n");
-		return;
-	}
-
 	spin_lock(&ailp->ail_lock);
 	mlip = xfs_ail_min(ailp);
 
