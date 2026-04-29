@@ -847,7 +847,13 @@ xlog_cil_ail_insert(
 
 	spin_lock(&ailp->ail_lock);
 	atomic_inc(&ctx->hold);
-	xfs_trans_ail_cursor_last(ailp, &cur, ctx->start_lsn);
+
+	/*
+	 * set cur->item to the last item equal to start_lsn or the last item
+	 * with a lsn lower than start_lsn
+	 * cur->item == NULL if ail is empty
+	 */
+	//xfs_trans_ail_cursor_last(ailp, &cur, ctx->start_lsn);
 	old_head = ailp->ail_head_lsn;
 	ailp->ail_head_lsn = ctx->commit_lsn;
 	/* xfs_ail_update_finish() drops the ail_lock */
@@ -923,12 +929,24 @@ xlog_cil_ail_insert(
 	}
 
 	spin_lock(&ailp->ail_lock);
-	xfs_trans_ail_cursor_done(&cur);
+	//xfs_trans_ail_cursor_done(&cur);
 
 	printk("Inserted items: CTX: %p Seq: %lld Items: %u\n",
 	       ctx, ctx->sequence, ctx->i_count);
-	if (!list_empty(&ctx->ail_items))
-		list_add_tail(&ctx->ail_link, &ailp->ail_head);
+
+	if (!list_empty(&ctx->ail_items)) {
+		struct xlog_chkpt	*last_ctx = NULL;
+
+		list_for_each_entry_reverse(last_ctx, &ailp->ail_head, ail_link) {
+			if (XFS_LSN_CMP(last_ctx->start_lsn, ctx->start_lsn) <= 0) {
+				list_add_tail(&ctx->ail_link, &last_ctx->ail_link);
+				break;
+			}
+		}
+
+		if (!last_ctx)
+			list_add_tail(&ctx->ail_link, &ailp->ail_head);
+	}
 
 	atomic_dec(&ctx->hold);
 	spin_unlock(&ailp->ail_lock);
