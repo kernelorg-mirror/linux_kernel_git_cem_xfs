@@ -935,13 +935,14 @@ xfs_trans_ail_insert(
 	lip->li_lsn = lsn;
 	lip->li_ctx = ctx;
 
-
+#if 0
 	last = cur ? cur->item : NULL;
 	if (!last || (uintptr_t)last & 1)
 		last = __xfs_trans_ail_cursor_last(ailp, lsn);
 
 	if (cur)
 		cur->item = lip;
+#endif
 
 	list_add_tail(&lip->li_ail, &ctx->ail_items);
 	ctx->i_count++;
