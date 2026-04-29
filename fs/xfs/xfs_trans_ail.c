@@ -35,7 +35,7 @@ xfs_ail_next(
 			if (list_empty(&ctx->ail_items))
 				continue;
 
-			return list_first_entry(&ctx->ail_items,
+			return list_first_entry_or_null(&ctx->ail_items,
 						struct xfs_log_item,
 						li_ail);
 		}
@@ -909,7 +909,6 @@ xfs_trans_ail_insert(
 	xfs_lsn_t		lsn) __releases(ailp->ail_lock)
 {
 	struct xfs_log_item	*mlip;
-	struct xfs_log_item	*last = NULL;
 	xfs_lsn_t		tail_lsn = 0;
 
 	spin_lock(&ailp->ail_lock);
@@ -930,14 +929,6 @@ xfs_trans_ail_insert(
 	}
 	lip->li_lsn = lsn;
 	lip->li_ctx = ctx;
-
-
-	last = cur ? cur->item : NULL;
-	if (!last || (uintptr_t)last & 1)
-		last = __xfs_trans_ail_cursor_last(ailp, lsn);
-
-	if (cur)
-		cur->item = lip;
 
 	list_add_tail(&lip->li_ail, &ctx->ail_items);
 	ctx->i_count++;
