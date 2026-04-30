@@ -944,7 +944,13 @@ xlog_cil_ail_insert(
 			}
 		}
 
-		if (!last_ctx)
+		/*
+		 * XXX: I think this is still buggy, but it's a progress already
+		 *
+		 * If we didn't insert the context above, insert it now
+		 * at the tail of the list.
+		 * */
+		if (list_is_head(&last_ctx->ail_link, &ailp->ail_head))
 			list_add_tail(&ctx->ail_link, &ailp->ail_head);
 	}
 
