@@ -35,7 +35,7 @@ xfs_ail_next(
 			if (list_empty(&ctx->ail_items))
 				continue;
 
-			return list_first_entry(&ctx->ail_items,
+			return list_first_entry_or_null(&ctx->ail_items,
 						struct xfs_log_item,
 						li_ail);
 		}
@@ -90,10 +90,16 @@ xfs_ail_check(
 {
 	struct xfs_log_item	*prev_lip;
 	struct xfs_log_item	*next_lip;
+	struct xfs_log_item	*li_cur;
 	xfs_lsn_t		prev_lsn = NULLCOMMITLSN;
 	xfs_lsn_t		next_lsn = NULLCOMMITLSN;
 	xfs_lsn_t		lsn;
+	xfs_lsn_t		first_lsn;
 	bool			in_ail;
+
+	struct xlog_chkpt	*ctx;
+	int			item_count = 0;
+	int			ctx_count = 0;
 
 
 	if (list_empty(&ailp->ail_head))
@@ -112,16 +118,30 @@ xfs_ail_check(
 		next_lsn = next_lip->li_lsn;
 	lsn = lip->li_lsn;
 
+	trace_printk("--- AIL DUMP ---\n");
+	list_for_each_entry(ctx, &ailp->ail_head, ail_link) {
+		trace_printk("CTX: num %d - lsn: %llx - %p\n",
+		       ctx_count, ctx->start_lsn, ctx);
+		ctx_count++;
+		item_count = 0;
+		first_lsn = 0;
+		list_for_each_entry(li_cur, &ctx->ail_items, li_ail) {
+			if (li_cur->li_lsn != first_lsn) {
+				trace_printk("\tItem: lsn: %llx -  %p\n",
+					     li_cur->li_lsn, lip);
+				first_lsn = li_cur->li_lsn;
+			}
+			item_count++;
+		}
+		trace_printk("CTX %p total items: %d\n", ctx, item_count);
+	}
+
 	if (in_ail &&
 	    (prev_lsn == NULLCOMMITLSN || XFS_LSN_CMP(prev_lsn, lsn) <= 0) &&
 	    (next_lsn == NULLCOMMITLSN || XFS_LSN_CMP(next_lsn, lsn) >= 0))
 		return;
 
 	spin_unlock(&ailp->ail_lock);
-
-	printk("prev_lsn(ctx): 0x%llx(%p) next_lsn(ctx): 0x%llx(%p) cur_lsn(ctx): 0x%llx(%p)\n",
-	       prev_lsn, prev_lip->li_ctx, next_lsn, next_lip->li_ctx, lsn,
-	       lip->li_ctx);
 	ASSERT(in_ail);
 	ASSERT(prev_lsn == NULLCOMMITLSN || XFS_LSN_CMP(prev_lsn, lsn) <= 0);
 	ASSERT(next_lsn == NULLCOMMITLSN || XFS_LSN_CMP(next_lsn, lsn) >= 0);

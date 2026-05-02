@@ -939,13 +939,15 @@ xlog_cil_ail_insert(
 
 		list_for_each_entry_reverse(last_ctx, &ailp->ail_head, ail_link) {
 			if (XFS_LSN_CMP(last_ctx->start_lsn, ctx->start_lsn) <= 0) {
-				list_add_tail(&ctx->ail_link, &last_ctx->ail_link);
+				list_add(&ctx->ail_link, &last_ctx->ail_link);
 				break;
 			}
 		}
 
 		/*
-		 * XXX: I think this is still buggy, but it's a progress already
+		 * XXX: This is still buggy, but it's a progress already
+		 *	The chkpt contexts are being inserted in the reversed
+		 *	order. tail has higher contexts than head.
 		 *
 		 * If we didn't insert the context above, insert it now
 		 * at the tail of the list.
