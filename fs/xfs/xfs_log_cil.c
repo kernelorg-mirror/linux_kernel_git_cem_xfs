@@ -945,9 +945,9 @@ xlog_cil_ail_insert(
 		}
 
 		/*
-		 * XXX: This is still buggy, but it's a progress already
-		 *	The chkpt contexts are being inserted in the reversed
-		 *	order. tail has higher contexts than head.
+		 * XXX: This was buggy as I was inserting items in the tail of
+		 *	the list, making the entries available in the reverse
+		 *	order. This should be fixed by now.
 		 *
 		 * If we didn't insert the context above, insert it now
 		 * at the tail of the list.
