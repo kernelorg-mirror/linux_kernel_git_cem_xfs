@@ -1005,11 +1005,7 @@ xlog_cil_committed(
 
 	xlog_cil_free_logvec(&ctx->lv_chain);
 
-	if (!list_empty(&busy_extents->extent_list))
-		xfs_discard_extents(mp, busy_extents);
-	else
-		xfs_busy_extents_free(busy_extents);
-
+	xfs_discard_extents(mp, busy_extents);
 	kfree(ctx);
 }
 
