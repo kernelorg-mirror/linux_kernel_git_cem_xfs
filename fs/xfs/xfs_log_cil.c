@@ -931,7 +931,7 @@ xlog_cil_ail_insert(
 	spin_lock(&ailp->ail_lock);
 	//xfs_trans_ail_cursor_done(&cur);
 
-	printk("Inserted items: CTX: %p Seq: %lld Items: %u\n",
+	trace_printk("Inserted items: CTX: %p Seq: %lld Items: %u\n",
 	       ctx, ctx->sequence, ctx->i_count);
 
 	if (!list_empty(&ctx->ail_items)) {
@@ -1023,7 +1023,7 @@ xlog_cil_committed(
 	 */
 #if 0
 	if (list_empty(&ctx->ail_items) && list_empty(&ctx->ail_link)) {
-		printk("Freeing empty CTX: %p - SEQ: %lld\n",
+		trace_printk("Freeing empty CTX: %p - SEQ: %lld\n",
 		       ctx, ctx->sequence);
 		kfree(ctx);
 	}

@@ -421,7 +421,7 @@ xfs_ail_delete(
 	list_del(&lip->li_ail);
 
 	if (list_empty(&ctx->ail_items) && !atomic_read(&ctx->hold)) {
-		printk("Freeing CTX: %p SEQ: %lld\n", ctx, ctx->sequence);
+		trace_printk("Freeing CTX: %p SEQ: %lld\n", ctx, ctx->sequence);
 		list_del(&ctx->ail_link);
 		kfree(ctx);
 	}
