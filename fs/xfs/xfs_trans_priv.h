@@ -72,7 +72,6 @@ struct xfs_ail {
  */
 void	xfs_trans_ail_insert(struct xfs_ail *ailp,
 			     struct xlog_chkpt *ctx,
-			     struct xfs_ail_cursor *cur,
 			     struct xfs_log_item *lip,
 			     xfs_lsn_t lsn) __releases(ailp->ail_lock);
 

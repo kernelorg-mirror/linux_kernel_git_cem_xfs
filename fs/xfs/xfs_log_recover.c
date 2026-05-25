@@ -1994,7 +1994,7 @@ xlog_recover_intent_item(
 	 * Insert the intent into the AIL directly and drop one reference so
 	 * that finishing or canceling the work will drop the other.
 	 */
-	xfs_trans_ail_insert(log->l_ailp, ctx, NULL, lip, lsn);
+	xfs_trans_ail_insert(log->l_ailp, ctx, lip, lsn);
 	lip->li_ops->iop_unpin(lip, 0);
 }
 

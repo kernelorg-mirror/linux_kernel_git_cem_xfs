@@ -928,12 +928,10 @@ void
 xfs_trans_ail_insert(
 	struct xfs_ail		*ailp,
 	struct xlog_chkpt	*ctx,
-	struct xfs_ail_cursor	*cur,
 	struct xfs_log_item	*lip,
 	xfs_lsn_t		lsn) __releases(ailp->ail_lock)
 {
 	struct xfs_log_item	*mlip;
-	struct xfs_log_item	*last = NULL;
 	xfs_lsn_t		tail_lsn = 0;
 
 	spin_lock(&ailp->ail_lock);
@@ -955,18 +953,8 @@ xfs_trans_ail_insert(
 	lip->li_lsn = lsn;
 	lip->li_ctx = ctx;
 
-#if 0
-	last = cur ? cur->item : NULL;
-	if (!last || (uintptr_t)last & 1)
-		last = __xfs_trans_ail_cursor_last(ailp, lsn);
-
-	if (cur)
-		cur->item = lip;
-#endif
-
 	list_add_tail(&lip->li_ail, &ctx->ail_items);
 	ctx->i_count++;
-
 
 skip:
 	/*

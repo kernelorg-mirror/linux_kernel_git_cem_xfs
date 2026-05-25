@@ -829,7 +829,6 @@ xlog_cil_ail_insert(
 {
 	struct xfs_ail		*ailp = ctx->cil->xc_log->l_ailp;
 	struct xfs_log_vec	*lv;
-	struct xfs_ail_cursor	cur;
 	xfs_lsn_t		old_head;
 
 	/*
@@ -848,12 +847,6 @@ xlog_cil_ail_insert(
 	spin_lock(&ailp->ail_lock);
 	atomic_inc(&ctx->hold);
 
-	/*
-	 * set cur->item to the last item equal to start_lsn or the last item
-	 * with a lsn lower than start_lsn
-	 * cur->item == NULL if ail is empty
-	 */
-	//xfs_trans_ail_cursor_last(ailp, &cur, ctx->start_lsn);
 	old_head = ailp->ail_head_lsn;
 	ailp->ail_head_lsn = ctx->commit_lsn;
 	/* xfs_ail_update_finish() drops the ail_lock */
@@ -905,6 +898,13 @@ xlog_cil_ail_insert(
 			continue;
 		}
 
+		/*
+		 * XXX: Do we still need this once we don't have a bulk update
+		 * anymore? We still need to unpin the item though. How could
+		 * this be done?
+		 * Answer: Hah. we do unpin all the items anyway, so this looks
+		 * pointless now.
+		 */
 		if (item_lsn != ctx->start_lsn) {
 
 			/*
@@ -915,25 +915,30 @@ xlog_cil_ail_insert(
 			 * using.
 			 */
 			if (XFS_LSN_CMP(item_lsn, lip->li_lsn) > 0)
-				xfs_trans_ail_insert(ailp, ctx, NULL, lip, item_lsn);
+				xfs_trans_ail_insert(ailp, ctx, lip, item_lsn);
 
 			if (lip->li_ops->iop_unpin)
 				lip->li_ops->iop_unpin(lip, 0);
 			continue;
 		}
 
-		xfs_trans_ail_insert(ailp, ctx, &cur, lip, ctx->start_lsn);
+		xfs_trans_ail_insert(ailp, ctx, lip, ctx->start_lsn);
 
 		if (lip->li_ops->iop_unpin)
 			lip->li_ops->iop_unpin(lip, 0);
 	}
 
 	spin_lock(&ailp->ail_lock);
-	//xfs_trans_ail_cursor_done(&cur);
 
 	trace_printk("Inserted items: CTX: %p Seq: %lld Items: %u\n",
 	       ctx, ctx->sequence, ctx->i_count);
 
+	/*
+	 * XXX: This doesn't seem right yet. I think highest LSN is always at
+	 * the head, perhaps this has no bad effect now as the first loop will
+	 * fail if the AIL is empty, but the last list_add should probably be at
+	 * the HEAD not the tail.
+	 */
 	if (!list_empty(&ctx->ail_items)) {
 		struct xlog_chkpt	*last_ctx = NULL;
 
