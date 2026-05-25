@@ -99,8 +99,7 @@ static inline xfs_lsn_t xfs_ail_get_push_target(struct xfs_ail *ailp)
 void			xfs_ail_push_all_sync(struct xfs_ail *ailp);
 xfs_lsn_t		xfs_ail_min_lsn(struct xfs_ail *ailp);
 
-struct xfs_log_item *	xfs_trans_ail_cursor_first(struct xfs_ail *ailp,
-					struct xfs_ail_cursor *cur,
+struct xfs_log_item *	xfs_trans_ail_first(struct xfs_ail *ailp,
 					xfs_lsn_t lsn);
 struct xfs_log_item *	xfs_trans_ail_cursor_last(struct xfs_ail *ailp,
 					struct xfs_ail_cursor *cur,

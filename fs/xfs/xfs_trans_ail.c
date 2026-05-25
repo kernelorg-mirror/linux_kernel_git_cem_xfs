@@ -341,20 +341,15 @@ xfs_trans_ail_cursor_clear(
  * first item in the AIL. Returns NULL if the list is empty.
  */
 struct xfs_log_item *
-xfs_trans_ail_cursor_first(
+xfs_trans_ail_first(
 	struct xfs_ail		*ailp,
-	struct xfs_ail_cursor	*cur,
 	xfs_lsn_t		lsn)
 {
 	struct xfs_log_item	*lip;
 	struct xlog_chkpt	*ctx;
 
-	xfs_trans_ail_cursor_init(ailp, cur);
-
-	if (lsn == 0) {
-		lip = xfs_ail_min(ailp);
-		goto out;
-	}
+	if (lsn == 0)
+		return xfs_ail_min(ailp);
 
 	list_for_each_entry(ctx, &ailp->ail_head, ail_link) {
 		if (list_empty(&ctx->ail_items))
@@ -362,15 +357,10 @@ xfs_trans_ail_cursor_first(
 
 		list_for_each_entry(lip, &ctx->ail_items, li_ail) {
 			if (XFS_LSN_CMP(lip->li_lsn, lsn) >= 0)
-				goto out;
+				return lip;
 		}
 	}
 	return NULL;
-
-out:
-	if (lip)
-		cur->item = xfs_ail_next(ailp, lip);
-	return lip;
 }
 
 static struct xfs_log_item *
@@ -638,7 +628,6 @@ xfsaild_push(
 	struct xfs_ail		*ailp)
 {
 	struct xfs_mount	*mp = ailp->ail_log->l_mp;
-	struct xfs_ail_cursor	cur;
 	struct xfs_log_item	*lip;
 	xfs_lsn_t		lsn;
 	long			tout;
@@ -670,9 +659,9 @@ xfsaild_push(
 		goto out_done;
 
 	/* we're done if the AIL is empty or our push has reached the end */
-	lip = xfs_trans_ail_cursor_first(ailp, &cur, ailp->ail_last_pushed_lsn);
+	lip = xfs_trans_ail_first(ailp, ailp->ail_last_pushed_lsn);
 	if (!lip)
-		goto out_done_cursor;
+		goto out_done;
 
 	XFS_STATS_INC(mp, xs_push_ail);
 
@@ -704,7 +693,7 @@ xfsaild_push(
 			break;
 
 next_item:
-		lip = xfs_trans_ail_cursor_next(ailp, &cur);
+		lip = xfs_ail_next(ailp, lip);
 		if (lip == NULL)
 			break;
 		if (lip->li_lsn != lsn && count > 1000)
@@ -712,8 +701,6 @@ next_item:
 		lsn = lip->li_lsn;
 	}
 
-out_done_cursor:
-	xfs_trans_ail_cursor_done(&cur);
 out_done:
 	spin_unlock(&ailp->ail_lock);
 
