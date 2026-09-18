@@ -34,6 +34,7 @@
 #include "xfs_rtalloc.h"
 #include "xfs_rtgroup.h"
 #include "xfs_metafile.h"
+#include "xfs_zone_alloc.h"
 
 /*
  * Copy on Write of Shared Blocks
@@ -1643,16 +1644,36 @@ xfs_reflink_remap_blocks(
  */
 static int
 xfs_reflink_zero_posteof(
-	struct xfs_inode	*ip,
-	loff_t			pos)
+	struct xfs_inode		*ip,
+	loff_t				pos,
+	struct xfs_zone_alloc_ctx	*ac)
 {
-	loff_t			isize = i_size_read(VFS_I(ip));
+	loff_t				isize = i_size_read(VFS_I(ip));
 
 	if (pos <= isize)
 		return 0;
 
+#if defined CONFIG_XFS_RT && defined DEBUG_EXPENSIVE
+	/*
+	 * Zoned allocator never does speculative allocations,
+	 * ensure there is nothing allocated past isize
+	 */
+	if (xfs_is_zoned_inode(ip)) {
+		struct xfs_bmbt_irec	got;
+		struct xfs_iext_cursor	icur;
+		bool			found;
+		struct xfs_ifork	*ifp;
+		loff_t			iext = roundup_64(isize,
+						ip->i_mount->m_sb.sb_blocksize);
+
+		ifp = xfs_ifork_ptr(ip, XFS_DATA_FORK);
+		found = xfs_iext_lookup_extent(ip, ifp, iext, &icur, &got);
+		ASSERT(!found);
+	}
+#endif
+
 	trace_xfs_zero_eof(ip, isize, pos - isize);
-	return xfs_zero_range(ip, isize, pos - isize, NULL, NULL);
+	return xfs_zero_range(ip, isize, pos - isize, ac, NULL);
 }
 
 /*
@@ -1693,6 +1714,7 @@ xfs_reflink_remap_prep(
 	loff_t			*len,
 	unsigned int		remap_flags)
 {
+	struct xfs_zone_alloc_ctx ac = { };
 	struct inode		*inode_in = file_inode(file_in);
 	struct xfs_inode	*src = XFS_I(inode_in);
 	struct inode		*inode_out = file_inode(file_out);
@@ -1732,7 +1754,7 @@ xfs_reflink_remap_prep(
 	 * Zero existing post-eof speculative preallocations in the destination
 	 * file.
 	 */
-	ret = xfs_reflink_zero_posteof(dest, pos_out);
+	ret = xfs_reflink_zero_posteof(dest, pos_out, &ac);
 	if (ret)
 		goto out_unlock;
 
