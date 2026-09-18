@@ -1912,6 +1912,10 @@ xfs_reflink_unshare(
 
 	inode_dio_wait(inode);
 
+	/* Zoned always write out of place, just return zero for now */
+	if (xfs_is_zoned_inode(ip))
+		return 0;
+
 	if (IS_DAX(inode))
 		error = dax_file_unshare(inode, offset, len,
 				&xfs_dax_write_iomap_ops);
