@@ -34,6 +34,7 @@
 #include "xfs_rtalloc.h"
 #include "xfs_rtgroup.h"
 #include "xfs_metafile.h"
+#include "xfs_zone_alloc.h"
 
 /*
  * Copy on Write of Shared Blocks
@@ -1643,8 +1644,9 @@ xfs_reflink_remap_blocks(
  */
 static int
 xfs_reflink_zero_posteof(
-	struct xfs_inode	*ip,
-	loff_t			pos)
+	struct xfs_inode		*ip,
+	loff_t				pos,
+	struct xfs_zone_alloc_ctx	*ac)
 {
 	loff_t			isize = i_size_read(VFS_I(ip));
 
@@ -1652,7 +1654,7 @@ xfs_reflink_zero_posteof(
 		return 0;
 
 	trace_xfs_zero_eof(ip, isize, pos - isize);
-	return xfs_zero_range(ip, isize, pos - isize, NULL, NULL);
+	return xfs_zero_range(ip, isize, pos - isize, ac, NULL);
 }
 
 /*
@@ -1693,6 +1695,7 @@ xfs_reflink_remap_prep(
 	loff_t			*len,
 	unsigned int		remap_flags)
 {
+	struct xfs_zone_alloc_ctx ac = { };
 	struct inode		*inode_in = file_inode(file_in);
 	struct xfs_inode	*src = XFS_I(inode_in);
 	struct inode		*inode_out = file_inode(file_out);
@@ -1732,7 +1735,7 @@ xfs_reflink_remap_prep(
 	 * Zero existing post-eof speculative preallocations in the destination
 	 * file.
 	 */
-	ret = xfs_reflink_zero_posteof(dest, pos_out);
+	ret = xfs_reflink_zero_posteof(dest, pos_out, &ac);
 	if (ret)
 		goto out_unlock;
 
