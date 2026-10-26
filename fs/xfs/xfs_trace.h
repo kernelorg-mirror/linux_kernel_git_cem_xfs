@@ -3890,6 +3890,7 @@ DEFINE_REFCOUNT_EXTENT_EVENT(xfs_refcount_get);
 DEFINE_REFCOUNT_EXTENT_EVENT(xfs_refcount_update);
 DEFINE_REFCOUNT_EXTENT_EVENT(xfs_refcount_insert);
 DEFINE_REFCOUNT_EXTENT_EVENT(xfs_refcount_delete);
+DEFINE_REFCOUNT_EXTENT_EVENT(xfs_zoned_shared_extent);
 DEFINE_BTREE_ERROR_EVENT(xfs_refcount_insert_error);
 DEFINE_BTREE_ERROR_EVENT(xfs_refcount_delete_error);
 DEFINE_BTREE_ERROR_EVENT(xfs_refcount_update_error);
