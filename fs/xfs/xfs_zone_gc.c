@@ -14,8 +14,10 @@
 #include "xfs_trans.h"
 #include "xfs_icache.h"
 #include "xfs_rmap.h"
+#include "xfs_refcount.h"
 #include "xfs_rtbitmap.h"
 #include "xfs_rtrmap_btree.h"
+#include "xfs_rtrefcount_btree.h"
 #include "xfs_errortag.h"
 #include "xfs_error.h"
 #include "xfs_zone_alloc.h"
@@ -269,17 +271,53 @@ xfs_zone_gc_data_free(
 	kfree(data);
 }
 
+static int
+xfs_zone_gc_query_refcb(
+	struct xfs_btree_cur		*cur,
+	const struct xfs_refcount_irec	*irec,
+	void				*priv)
+{
+	int	*count = priv;
+
+	(*count)++;
+	trace_xfs_zoned_shared_extent(cur, (struct xfs_refcount_irec *)irec);
+	return 0;
+}
+
 static void
 xfs_zone_gc_iter_init(
 	struct xfs_zone_gc_iter	*iter,
 	struct xfs_rtgroup	*victim_rtg)
 
 {
+	struct xfs_refcount_irec	refi_low = { };
+	struct xfs_refcount_irec	refi_high;
+	struct xfs_btree_cur		*refc_cur;
+	struct xfs_trans		*tp;
+	int				shared_ext_count = 0;
+
 	iter->next_startblock = 0;
 	iter->rec_count = 0;
 	iter->rec_idx = 0;
 	iter->victim_rtg = victim_rtg;
 	atomic_inc(&victim_rtg->rtg_gccount);
+
+	refi_low.rc_startblock = 0;
+	refi_high.rc_startblock = -1U;
+	refi_low.rc_domain = refi_high.rc_domain = XFS_REFC_DOMAIN_SHARED;
+
+	tp = xfs_trans_alloc_empty(rtg_group(victim_rtg)->xg_mount);
+	xfs_rtgroup_lock(victim_rtg, XFS_RTGLOCK_REFCOUNT);
+
+	/* Find all shared extents within this range */
+	refc_cur = xfs_rtrefcountbt_init_cursor(tp, victim_rtg);
+	xfs_refcount_query_range(refc_cur, &refi_low, &refi_high,
+					 xfs_zone_gc_query_refcb,
+					 &shared_ext_count);
+
+	xfs_rtgroup_unlock(victim_rtg, XFS_RTGLOCK_REFCOUNT);
+	xfs_btree_del_cursor(refc_cur, 0);
+	xfs_trans_cancel(tp);
 }
 
 /*
@@ -344,8 +382,10 @@ xfs_zone_gc_query(
 	iter->rec_idx = 0;
 	iter->rec_count = 0;
 
+
 	tp = xfs_trans_alloc_empty(mp);
 	xfs_rtgroup_lock(rtg, XFS_RTGLOCK_RMAP);
+
 	cur = xfs_rtrmapbt_init_cursor(tp, rtg);
 	error = xfs_rmap_query_range(cur, &ri_low, &ri_high,
 			xfs_zone_gc_query_cb, iter);
